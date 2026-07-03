@@ -14,6 +14,7 @@
     survival: document.getElementById("survival"),
     depth: document.getElementById("depth"),
     healthText: document.getElementById("healthText"),
+    scoreText: document.getElementById("scoreText"),
     shieldText: document.getElementById("shieldText"),
     hitReadout: document.getElementById("hitReadout"),
     debuffReadout: document.getElementById("debuffReadout"),
@@ -80,6 +81,11 @@
     crash: null,
     restartAt: 0,
     mistakes: 0,
+    score: 0,
+    bestScore: readStoredBestScore(),
+    lastScoreText: "积分 0",
+    scorePulse: 0,
+    chaseEscapes: 0,
     health: 100,
     maxHealth: 100,
     shield: 35,
@@ -211,6 +217,14 @@
     return `${m}:${s}`;
   }
 
+  function readStoredBestScore() {
+    try {
+      return Number(localStorage.getItem("abyssBestScore") || 0);
+    } catch (error) {
+      return 0;
+    }
+  }
+
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, highQuality ? 2 : 1);
     W = window.innerWidth;
@@ -252,6 +266,10 @@
     game.crash = null;
     game.restartAt = 0;
     game.mistakes = Math.max(0, game.round - 1);
+    game.score = 0;
+    game.lastScoreText = "积分 0";
+    game.scorePulse = 0;
+    game.chaseEscapes = 0;
     game.health = game.maxHealth;
     game.shield = 35;
     game.essenceGuardTimer = 0;
@@ -335,10 +353,10 @@
     const p = game.pressure;
     const bag = ["reward", "reward", "drift", "rush"];
     if (p > 0.05) bag.push("narrow", "blackhole", "gate");
-    if (p > 0.16) bag.push("electric", "minefield", "rush");
-    if (p > 0.28) bag.push("hunt");
+    if (p > 0.16) bag.push("electric", "minefield", "rush", "hunt");
+    if (p > 0.24) bag.push("hunt", "hunt");
     if (p > 0.36) bag.push("blackhole", "electric", "narrow", "unstable", "gate", "minefield", "hunt");
-    if (game.time > game.finaleAt) bag.push("unstable", "blackhole", "electric", "gate", "minefield", "hunt");
+    if (game.time > game.finaleAt) bag.push("unstable", "blackhole", "electric", "gate", "minefield", "hunt", "hunt");
     game.zone = pick(bag);
     game.zoneUntil = game.time + rand(4.2, 7.2) - p * 1.6;
     const zone = zones.find((item) => item.key === game.zone);
@@ -395,6 +413,38 @@
     if (rule.debuff === "fracture") game.fractureTimer = Math.max(game.fractureTimer, rule.seconds);
   }
 
+  function addScore(amount, label, x = jelly.x, y = jelly.y - 24, hue = 52) {
+    const gained = Math.max(0, Math.round(amount));
+    if (!gained) return 0;
+    game.score += gained;
+    game.bestScore = Math.max(game.bestScore, game.score);
+    game.lastScoreText = `${label} +${gained}`;
+    game.scorePulse = 1;
+    game.rewardPulse = Math.max(game.rewardPulse, 0.68);
+    try {
+      localStorage.setItem("abyssBestScore", String(game.bestScore));
+    } catch (error) {
+      // localStorage 可能被隐私模式禁用；不影响本局积分。
+    }
+    if (Number.isFinite(x) && Number.isFinite(y)) floatText(x, y, `+${gained}分`, hue);
+    return gained;
+  }
+
+  function expireChase(h, label, score, hue = 42) {
+    if (h.chaseState === "spent") return;
+    h.chaseState = "spent";
+    h.spentAt = game.time;
+    const sy = h.y - game.cameraY;
+    if (!h.escapeScored && sy > -120 && sy < H + 140) {
+      h.escapeScored = true;
+      game.chaseEscapes += 1;
+      const gained = addScore(score + game.chaseEscapes * 3, label, h.x, sy - 18, hue);
+      game.eventText = `${label} +${gained}`;
+      game.shock = Math.max(game.shock, 0.3);
+      floatText(h.x, sy - 36, "失效", hue);
+    }
+  }
+
   function spawnCluster(worldY) {
     const c = caveAt(worldY);
     const p = game.pressure;
@@ -434,9 +484,9 @@
 
     if (openingDrift) return;
 
-    const hazardChance = clamp(0.18 + p * 0.28, 0.18, 0.46);
-    const hazardCap = p > 0.76 && Math.random() < 0.38 ? 2 : 1;
-    const pursuerCap = highQuality ? 3 : 2;
+    const hazardChance = clamp(0.22 + p * 0.36, 0.22, 0.58);
+    const hazardCap = p > 0.42 || zone === "hunt" ? 2 : 1;
+    const pursuerCap = highQuality ? 5 : 4;
     let spawned = 0;
     const trySpawn = (condition, spawn) => {
       if (spawned >= hazardCap || !condition) return;
@@ -448,8 +498,8 @@
     else if (zone === "electric") trySpawn(true, () => spawnElectric(worldY + rand(-40, 70), c));
     else if (zone === "narrow") trySpawn(true, () => spawnCrystals(worldY + rand(-50, 80), c));
     else if (zone === "gate") trySpawn(true, () => spawnGate(worldY + rand(-30, 70), c));
-    else if (zone === "minefield") trySpawn(true, () => spawnMine(worldY + rand(-50, 80), c, { seeker: p > 0.34 && activePursuerCount() < pursuerCap && Math.random() < 0.34 }));
-    else if (zone === "hunt") trySpawn(activePursuerCount() < pursuerCap, () => spawnPredator(worldY + rand(-50, 60), c));
+    else if (zone === "minefield") trySpawn(true, () => spawnMine(worldY + rand(-50, 80), c, { seeker: p > 0.22 && activePursuerCount() < pursuerCap && Math.random() < 0.58 }));
+    else if (zone === "hunt") trySpawn(activePursuerCount() < pursuerCap, () => spawnPredator(worldY + rand(-70, 80), c));
     else if (zone === "rush") trySpawn(true, () => spawnComet(worldY + rand(-60, 80), c));
     else if (zone === "unstable") trySpawn(true, () => spawnBubble(worldY + rand(-40, 80), c));
 
@@ -457,11 +507,20 @@
     trySpawn(Math.random() < hazardChance * 0.46, () => spawnElectric(worldY + rand(-40, 70), c));
     trySpawn(Math.random() < hazardChance * 0.5, () => spawnCrystals(worldY + rand(-50, 80), c));
     trySpawn(Math.random() < hazardChance * 0.22, () => spawnGate(worldY + rand(-30, 70), c));
-    trySpawn(Math.random() < hazardChance * 0.28, () => spawnMine(worldY + rand(-50, 80), c, { seeker: p > 0.32 && activePursuerCount() < pursuerCap && Math.random() < 0.22 }));
-    trySpawn(p > 0.3 && activePursuerCount() < pursuerCap && Math.random() < hazardChance * 0.18, () => spawnPredator(worldY + rand(-50, 60), c));
+    trySpawn(Math.random() < hazardChance * 0.34, () => spawnMine(worldY + rand(-50, 80), c, { seeker: p > 0.22 && activePursuerCount() < pursuerCap && Math.random() < 0.44 }));
+    trySpawn(p > 0.18 && activePursuerCount() < pursuerCap && Math.random() < hazardChance * 0.38, () => spawnPredator(worldY + rand(-70, 80), c));
     trySpawn(Math.random() < hazardChance * 0.22, () => spawnComet(worldY + rand(-60, 80), c));
     trySpawn(Math.random() < hazardChance * 0.28, () => spawnBubble(worldY + rand(-40, 80), c));
-    const maxHazards = highQuality ? 64 : 34;
+
+    const pursuerChance = zone === "hunt" ? 0.92 : clamp(0.08 + p * 0.54, 0.08, 0.5);
+    if (p > 0.08 && activePursuerCount() < pursuerCap && Math.random() < pursuerChance) {
+      spawnPredator(worldY + rand(-90, 95), c);
+    }
+    if (p > 0.2 && activePursuerCount() < pursuerCap && Math.random() < pursuerChance * 0.38) {
+      spawnMine(worldY + rand(-70, 90), c, { seeker: true });
+    }
+
+    const maxHazards = highQuality ? 78 : 46;
     if (hazards.length > maxHazards) hazards.splice(0, hazards.length - maxHazards);
     if (currents.length > (highQuality ? 28 : 14)) currents.splice(0, currents.length - (highQuality ? 28 : 14));
   }
@@ -553,9 +612,9 @@
         vy: 0,
         seeker: Boolean(options.seeker),
         chaseState: "idle",
-        chaseT: rand(1.6, 2.25),
-        trigger: rand(150, 205),
-        range: rand(150, 220),
+        chaseT: options.seeker ? rand(2.7, 4.1) : rand(1.8, 2.45),
+        trigger: options.seeker ? rand(215, 285) : rand(150, 205),
+        range: options.seeker ? rand(285, 430) : rand(150, 220),
         near: false,
       });
     }
@@ -572,15 +631,16 @@
       y,
       originX: x,
       originY: y,
-      vx: dir * rand(82, 120),
-      vy: rand(-10, 10),
+      vx: dir * rand(34, 58),
+      vy: rand(-14, 14),
       r: rand(15, 20),
       side: dir,
       hue: 24,
       phase: rand(0, TAU),
       chaseState: "chasing",
-      chaseT: rand(1.7, 2.45),
-      range: rand(190, 270),
+      chaseT: rand(3.4, 5.2),
+      range: rand(360, 540),
+      lockRange: rand(260, 360),
       near: false,
     });
   }
@@ -603,7 +663,7 @@
   function spawnDramaHazard() {
     const worldY = game.cameraY + jelly.y + H * rand(0.34, 0.52);
     const c = caveAt(worldY);
-    const type = pick(["gate", "mine", "comet", "blackhole", "electric"]);
+    const type = pick(["gate", "mine", "comet", "blackhole", "electric", "predator"]);
     game.eventText = pick(["来了来了", "这波要手快", "连续救一下", "别被带偏"]);
     game.shock = Math.max(game.shock, 0.7);
     if (type === "gate") spawnGate(worldY, c);
@@ -611,6 +671,7 @@
     if (type === "comet") spawnComet(worldY, c);
     if (type === "blackhole") spawnBlackhole(worldY, c);
     if (type === "electric") spawnElectric(worldY, c);
+    if (type === "predator") spawnPredator(worldY, c);
     for (let i = 0; i < 2; i += 1) {
       const kind = i === 0 ? chooseRewardKind() : "cleanse";
       collectibles.push({
@@ -885,6 +946,7 @@
     game.rewardTimer = Math.max(0, game.rewardTimer - dt);
     if (game.rewardTimer <= 0) game.rewardCombo = 0;
     game.rewardPulse = Math.max(0, game.rewardPulse - dt * 2.8);
+    game.scorePulse = Math.max(0, game.scorePulse - dt * 3.2);
     game.essenceGuardTimer = Math.max(0, game.essenceGuardTimer - dt);
     game.slowTimer = Math.max(0, game.slowTimer - dt);
     game.bleedTimer = Math.max(0, game.bleedTimer - dt);
@@ -921,7 +983,7 @@
 
     while (game.nextSpawnY < game.cameraY + H + 360) {
       spawnCluster(game.nextSpawnY);
-      game.nextSpawnY += Math.max(72, rand(96, 152) - game.pressure * 18);
+      game.nextSpawnY += Math.max(62, rand(82, 128) - game.pressure * 24);
     }
 
     if (game.time > game.nextDramaAt && game.time < game.finaleAt - 5) {
@@ -1050,17 +1112,17 @@
     if (h.chaseState === "chasing") {
       h.chaseT -= dt;
       const moved = dist(h.x, h.y, h.originX, h.originY);
-      if (h.chaseT <= 0 || moved > h.range || sy < -70) {
-        h.chaseState = "spent";
-        h.vx = (h.x < jelly.x ? -1 : 1) * rand(76, 118);
+      if (h.chaseT <= 0 || moved > h.range || sy < -85) {
+        h.vx = (h.x < jelly.x ? -1 : 1) * rand(112, 160);
         h.vy *= 0.25;
+        expireChase(h, "雷泡失效", 18, 48);
       } else {
-        const speed = 82 + game.pressure * 52;
+        const speed = 118 + game.pressure * 82;
         const dx = jelly.x - h.x;
         const dy = targetY - h.y;
         const len = Math.max(1, Math.hypot(dx, dy));
-        h.vx = lerp(h.vx, (dx / len) * speed, 0.1);
-        h.vy = lerp(h.vy, (dy / len) * speed, 0.1);
+        h.vx = lerp(h.vx, (dx / len) * speed, 0.16);
+        h.vy = lerp(h.vy, (dy / len) * speed, 0.16);
       }
     }
 
@@ -1071,22 +1133,29 @@
   }
 
   function updatePredator(h, dt) {
+    const sy = h.y - game.cameraY;
     if (h.chaseState === "chasing") {
       h.chaseT -= dt;
       const moved = dist(h.x, h.y, h.originX, h.originY);
-      if (h.chaseT <= 0 || moved > h.range || h.y - game.cameraY < -70) {
-        h.chaseState = "spent";
-        h.vx = h.side * rand(145, 190);
-        h.vy *= 0.25;
+      if (h.chaseT <= 0 || moved > h.range || sy < -95) {
+        h.vx = h.side * rand(180, 245);
+        h.vy *= 0.22;
+        expireChase(h, "猎光鱼失效", 28, 38);
       } else {
-        const targetX = jelly.x + jelly.vx * 0.16;
-        const targetY = game.cameraY + jelly.y + jelly.vy * 0.16;
+        const lead = clamp(dist(jelly.x, game.cameraY + jelly.y, h.x, h.y) / 360, 0.08, 0.32);
+        const targetX = jelly.x + jelly.vx * lead;
+        const targetY = game.cameraY + jelly.y + jelly.vy * lead;
         const dx = targetX - h.x;
         const dy = targetY - h.y;
         const len = Math.max(1, Math.hypot(dx, dy));
-        const speed = 126 + game.pressure * 74;
-        h.vx = lerp(h.vx, (dx / len) * speed, 0.12);
-        h.vy = lerp(h.vy, (dy / len) * speed, 0.12);
+        const speed = 170 + game.pressure * 112;
+        h.vx = lerp(h.vx, (dx / len) * speed, 0.2);
+        h.vy = lerp(h.vy, (dy / len) * speed, 0.2);
+        if (!h.announced && sy > -40 && sy < H + 120) {
+          h.announced = true;
+          game.eventText = "猎光鱼锁定";
+          game.shock = Math.max(game.shock, 0.45);
+        }
       }
     }
 
@@ -1110,6 +1179,8 @@
         game.rewardCombo += item.value;
         game.rewardTimer = 1.8;
         game.rewardPulse = 1;
+        const collectScore = 8 * item.value + Math.max(0, game.rewardCombo - item.value) * 2;
+        addScore(collectScore, item.value > 1 ? "大星尘" : "星尘", item.x, sy - 30, item.hue);
         applyReward(item, sy);
         jelly.energy = clamp(jelly.energy + 0.035 * item.value, 0, 1);
         jelly.glow = 2.5;
@@ -1130,6 +1201,7 @@
   }
 
   function rewardFloatText(item) {
+    if (item.floatText) return item.floatText;
     if (item.kind === "heal") return `+${10 * item.value}生命`;
     if (item.kind === "shield") return `+${12 * item.value}甲`;
     return "清负面";
@@ -1138,17 +1210,31 @@
   function applyReward(item, screenY) {
     if (item.kind === "heal") {
       const amount = 10 * item.value;
+      const missing = Math.max(0, game.maxHealth - game.health);
+      const restored = Math.min(amount, missing);
+      const overflow = Math.max(0, amount - restored);
       game.health = clamp(game.health + amount, 0, game.maxHealth);
-      game.lastRewardText = `回血 +${amount}`;
+      const overflowScore = overflow > 0 ? addScore(overflow * 6 + item.value * 4, "满血转分", item.x, screenY - 48, item.hue) : 0;
+      item.floatText = overflowScore > 0 ? `+${overflowScore}分` : `+${restored}生命`;
+      game.lastRewardText = overflowScore > 0 ? `满血转分 +${overflowScore}` : `回血 +${restored}`;
     } else if (item.kind === "shield") {
       const amount = 12 * item.value;
+      const missing = Math.max(0, game.maxShield - game.shield);
+      const restored = Math.min(amount, missing);
+      const overflow = Math.max(0, amount - restored);
       game.shield = clamp(game.shield + amount, 0, game.maxShield);
-      game.lastRewardText = `护甲 +${amount}`;
+      const overflowScore = overflow > 0 ? addScore(overflow * 4 + item.value * 3, "满甲转分", item.x, screenY - 48, item.hue) : 0;
+      item.floatText = overflowScore > 0 ? `+${overflowScore}分` : `+${restored}甲`;
+      game.lastRewardText = overflowScore > 0 ? `满甲转分 +${overflowScore}` : `护甲 +${restored}`;
     } else {
       const hadDebuff = hasDebuff();
+      const guardBefore = game.essenceGuardTimer;
       clearDebuffs();
       game.essenceGuardTimer = clamp(game.essenceGuardTimer + 3 * item.value, 0, 6);
-      game.lastRewardText = hadDebuff ? "净化 清负面" : `净化免疫 ${Math.ceil(game.essenceGuardTimer)}s`;
+      const guardOverflow = Math.max(0, guardBefore + 3 * item.value - 6);
+      const overflowScore = !hadDebuff && guardOverflow > 0 ? addScore(guardOverflow * 10 + item.value * 5, "净化转分", item.x, screenY - 48, item.hue) : 0;
+      item.floatText = overflowScore > 0 ? `+${overflowScore}分` : hadDebuff ? "清负面" : `免疫${Math.ceil(game.essenceGuardTimer)}s`;
+      game.lastRewardText = overflowScore > 0 ? `净化转分 +${overflowScore}` : hadDebuff ? "净化 清负面" : `净化免疫 ${Math.ceil(game.essenceGuardTimer)}s`;
     }
     game.lastHitText = game.lastRewardText;
     game.lastHitTimer = 1.2;
@@ -1294,14 +1380,26 @@
         const activeR = h.r + Math.max(0, Math.sin(game.time * 4.6 + h.phase)) * 10;
         const hitNote = h.seeker ? "追猎雷泡放电" : "雷泡放电";
         const missNote = h.seeker ? "追猎雷泡甩开了" : "雷泡边上甩开了";
-        if (d < activeR + jelly.r * 0.48) applyDamage("mine", h.x, sy, hitNote);
-        else nearMiss(h, d, activeR + jelly.r + 14, missNote);
+        if (d < activeR + jelly.r * 0.48) {
+          const damaged = applyDamage("mine", h.x, sy, hitNote);
+          if (damaged && h.seeker) {
+            h.chaseState = "spent";
+            h.vx = (h.x < jelly.x ? -1 : 1) * rand(120, 170);
+            h.vy *= 0.2;
+          }
+        } else nearMiss(h, d, activeR + jelly.r + 14, missNote);
       }
 
       if (h.type === "predator") {
         const d = dist(jelly.x, jelly.y, h.x, sy);
-        if (d < h.r + jelly.r * 0.55) applyDamage("predator", h.x, sy, "猎光鱼追咬");
-        else nearMiss(h, d, h.r + jelly.r + 16, "猎光鱼擦身甩开");
+        if (d < h.r + jelly.r * 0.55) {
+          const damaged = applyDamage("predator", h.x, sy, "猎光鱼追咬");
+          if (damaged) {
+            h.chaseState = "spent";
+            h.vx = h.side * rand(170, 230);
+            h.vy *= 0.2;
+          }
+        } else nearMiss(h, d, h.r + jelly.r + 16, "猎光鱼擦身甩开");
       }
 
       if (h.type === "comet") {
@@ -1359,7 +1457,7 @@
     hud.failReason.textContent = failReasons[reason] || "被水流卷走";
     hud.finalTime.textContent = formatTime(game.time);
     hud.finalDepth.textContent = `${game.depth}m`;
-    hud.finalShield.textContent = String(Math.round(game.shield));
+    hud.finalShield.textContent = `${Math.round(game.shield)}甲 / ${game.score}分`;
     burst(jelly.x, jelly.y, highQuality ? (reason === "shatter" ? 90 : 56) : 24, reason === "electric" ? 304 : 186, 1.35);
   }
 
@@ -1674,7 +1772,8 @@
     if (!rule) return;
     const x = h.x ?? h.gapX ?? W * 0.5;
     const tail = rule.consequence && rule.consequence !== "无负面" ? ` ${rule.consequence.replace(/[0-9.]+s/g, "")}` : "";
-    const text = rule.amount > 0 ? `-${rule.amount} ${rule.label}${tail}` : rule.label;
+    const chaseTag = h.chaseState === "chasing" ? " 锁定" : h.chaseState === "spent" ? " 失效" : h.seeker ? " 预警" : "";
+    const text = rule.amount > 0 ? `-${rule.amount} ${rule.label}${tail}${chaseTag}` : `${rule.label}${chaseTag}`;
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
     ctx.font = "700 11px sans-serif";
@@ -1833,10 +1932,12 @@
     const pulse = Math.max(0, Math.sin(game.time * 4.6 + h.phase));
     const r = h.r + pulse * 8;
     const chasing = h.seeker && h.chaseState === "chasing";
+    const spent = h.chaseState === "spent";
     ctx.save();
     ctx.translate(h.x, sy);
     ctx.globalCompositeOperation = "lighter";
     ctx.shadowBlur = fx(24);
+    ctx.globalAlpha = spent ? 0.48 : 1;
     ctx.shadowColor = chasing ? "rgba(255, 180, 55, 0.9)" : "rgba(255, 64, 196, 0.85)";
     ctx.strokeStyle = chasing ? `rgba(255, 185, 68, ${0.28 + pulse * 0.48})` : `rgba(255, 87, 207, ${0.18 + pulse * 0.42})`;
     ctx.lineWidth = 2;
@@ -1872,11 +1973,13 @@
 
   function drawPredator(h, sy) {
     const chasing = h.chaseState === "chasing";
+    const spent = h.chaseState === "spent";
     const angle = Math.atan2(h.vy, h.vx || h.side);
     ctx.save();
     ctx.translate(h.x, sy);
     ctx.rotate(angle);
     ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = spent ? 0.5 : 1;
     ctx.shadowBlur = fx(chasing ? 24 : 14);
     ctx.shadowColor = chasing ? "rgba(255, 135, 54, 0.88)" : "rgba(255, 195, 92, 0.42)";
     ctx.fillStyle = chasing ? "rgba(255, 126, 58, 0.82)" : "rgba(255, 192, 92, 0.42)";
@@ -2069,8 +2172,9 @@
   function updateHud() {
     hud.survival.textContent = formatTime(game.time);
     hud.depth.textContent = `${game.depth}m`;
-    hud.healthText.textContent = String(Math.round(game.health));
-    hud.shieldText.textContent = String(Math.round(game.shield));
+    hud.healthText.textContent = `${Math.round(game.health)} · ${game.score}分`;
+    if (hud.scoreText) hud.scoreText.textContent = `${game.score}分`;
+    hud.shieldText.textContent = `${Math.round(game.shield)} / ${game.bestScore}最高`;
     hud.hitReadout.textContent = game.lastHitText;
     hud.debuffReadout.textContent = debuffSummary();
     const zone = zones.find((item) => item.key === game.zone);
@@ -2079,6 +2183,7 @@
     const panic = clamp((game.time - game.finaleAt) / Math.max(1, game.failAt - game.finaleAt), 0, 1);
     const healthRatio = clamp(game.health / game.maxHealth, 0, 1);
     hud.meterFill.style.transform = `scaleX(${healthRatio})`;
+    hud.meterFill.style.filter = game.scorePulse > 0 ? `brightness(${1 + game.scorePulse * 0.85}) saturate(${1 + game.scorePulse * 0.45})` : "";
     hud.meterFill.parentElement.classList.toggle("danger", healthRatio < 0.34);
     const buffText = game.essenceGuardTimer > 0 ? `净化：${Math.ceil(game.essenceGuardTimer)}s` : hasDebuff() ? debuffSummary().replace("负面：", "") : "状态：清爽";
     hud.feel.textContent = buffText;
@@ -2086,7 +2191,7 @@
     hud.mistakes.textContent = `护甲减伤：${Math.round(armorReduction * 100)}%`;
     hud.eventChip.textContent = game.eventText;
     hud.commandLine.textContent = game.commandText;
-    hud.comboLabel.textContent = game.rewardCombo > 0 ? `连吃 x${game.rewardCombo}` : game.lastRewardText;
+    hud.comboLabel.textContent = game.rewardCombo > 0 ? `连吃 x${game.rewardCombo} · ${game.lastScoreText}` : game.lastScoreText;
     hud.pilotCard.classList.toggle("hot", game.danger > 0.46 || game.shock > 0.1);
 
     const tx = game.controlX * 42;
