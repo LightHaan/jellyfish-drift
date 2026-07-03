@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>坚强的水母</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="霓虹深海漂流生存小游戏"></canvas>
+
+    <main class="hud" aria-hidden="true">
+      <section class="score-strip">
+        <div>
+          <span>存活</span>
+          <strong id="survival">00:00</strong>
+        </div>
+        <div>
+          <span>深度</span>
+          <strong id="depth">0m</strong>
+        </div>
+        <div>
+          <span>生命</span>
+          <strong id="healthText">100</strong>
+        </div>
+        <div>
+          <span>护甲</span>
+          <strong id="shieldText">0</strong>
+        </div>
+      </section>
+
+      <section class="rule-strip">
+        <span><i class="dot heal"></i>回血</span>
+        <span><i class="dot shield"></i>护甲减伤</span>
+        <span><i class="dot cleanse"></i>净化</span>
+      </section>
+
+      <section class="status-strip">
+        <b id="hitReadout">状态稳定</b>
+        <span id="debuffReadout">负面：无</span>
+      </section>
+
+      <section class="pilot-card">
+        <div class="pilot-head">
+          <span>操控状态</span>
+          <b id="zoneName">梦海漂流</b>
+        </div>
+
+        <div class="gesture-pad" id="gesturePad">
+          <span class="gesture-line" id="gestureLine"></span>
+          <span class="gesture-thumb" id="gestureThumb"></span>
+        </div>
+
+        <div class="command-row">
+          <b id="commandLine">轻推控线</b>
+          <span id="comboLabel">无增益</span>
+        </div>
+
+        <div class="key-grid">
+          <div></div>
+          <button data-key="up">↑</button>
+          <div></div>
+          <button data-key="left">←</button>
+          <button data-key="down">↓</button>
+          <button data-key="right">→</button>
+        </div>
+
+        <div class="action-row">
+          <button data-key="boost">短喷</button>
+          <button data-key="brake">稳定</button>
+        </div>
+
+        <div class="meter">
+          <span id="meterFill"></span>
+        </div>
+
+        <div class="readout">
+          <span id="feel">手感：很稳</span>
+          <span id="mistakes">减伤：0%</span>
+        </div>
+      </section>
+
+      <section class="event-chip" id="eventChip">尾流平顺</section>
+
+      <section class="result" id="resultPanel">
+        <p id="failReason">被黑洞吸走</p>
+        <h1>再来一次</h1>
+        <div class="result-grid">
+          <span>存活时间</span>
+          <strong id="finalTime">00:00</strong>
+          <span>最远深度</span>
+          <strong id="finalDepth">0m</strong>
+          <span>剩余护甲</span>
+          <strong id="finalShield">0</strong>
+        </div>
+        <small id="restartHint">马上重开</small>
+      </section>
+    </main>
+
+    <script src="./game.js"></script>
+  </body>
+</html>
