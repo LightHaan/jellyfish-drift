@@ -138,6 +138,7 @@
     { key: "electric", label: "电弧穿梭" },
     { key: "gate", label: "贝门夹缝" },
     { key: "minefield", label: "雷泡乱飘" },
+    { key: "hunt", label: "捕食者追击" },
     { key: "rush", label: "横流急闪" },
     { key: "reward", label: "星尘奖励" },
     { key: "unstable", label: "手感发飘" },
@@ -157,6 +158,7 @@
     gate: { label: "夹击", amount: 18, hue: 48, debuff: "fracture", seconds: 5, consequence: "裂甲5s" },
     electric: { label: "电击", amount: 16, hue: 304, debuff: "stun", seconds: 1.6, consequence: "麻痹1.6s" },
     mine: { label: "电击", amount: 14, hue: 304, debuff: "stun", seconds: 1.2, consequence: "麻痹1.2s" },
+    predator: { label: "追咬", amount: 15, hue: 24, debuff: "slow", seconds: 1.4, consequence: "减速1.4s" },
     comet: { label: "冲击", amount: 16, hue: 18, debuff: "slow", seconds: 1.8, consequence: "减速1.8s" },
     wall: { label: "擦伤", amount: 4, hue: 188, consequence: "无负面" },
     bubble: { label: "减速", amount: 0, hue: 196, debuff: "slow", seconds: 2.2, consequence: "减速2.2s" },
@@ -334,8 +336,9 @@
     const bag = ["reward", "reward", "drift", "rush"];
     if (p > 0.05) bag.push("narrow", "blackhole", "gate");
     if (p > 0.16) bag.push("electric", "minefield", "rush");
-    if (p > 0.36) bag.push("blackhole", "electric", "narrow", "unstable", "gate", "minefield");
-    if (game.time > game.finaleAt) bag.push("unstable", "blackhole", "electric", "gate", "minefield");
+    if (p > 0.28) bag.push("hunt");
+    if (p > 0.36) bag.push("blackhole", "electric", "narrow", "unstable", "gate", "minefield", "hunt");
+    if (game.time > game.finaleAt) bag.push("unstable", "blackhole", "electric", "gate", "minefield", "hunt");
     game.zone = pick(bag);
     game.zoneUntil = game.time + rand(4.2, 7.2) - p * 1.6;
     const zone = zones.find((item) => item.key === game.zone);
@@ -350,6 +353,10 @@
     if (roll < 0.34) return "shield";
     if (roll < 0.68) return "heal";
     return "cleanse";
+  }
+
+  function activePursuerCount() {
+    return hazards.filter((h) => (h.type === "predator" || h.seeker) && h.chaseState !== "spent").length;
   }
 
   function hasDebuff() {
@@ -429,6 +436,7 @@
 
     const hazardChance = clamp(0.18 + p * 0.28, 0.18, 0.46);
     const hazardCap = p > 0.76 && Math.random() < 0.38 ? 2 : 1;
+    const pursuerCap = highQuality ? 3 : 2;
     let spawned = 0;
     const trySpawn = (condition, spawn) => {
       if (spawned >= hazardCap || !condition) return;
@@ -440,7 +448,8 @@
     else if (zone === "electric") trySpawn(true, () => spawnElectric(worldY + rand(-40, 70), c));
     else if (zone === "narrow") trySpawn(true, () => spawnCrystals(worldY + rand(-50, 80), c));
     else if (zone === "gate") trySpawn(true, () => spawnGate(worldY + rand(-30, 70), c));
-    else if (zone === "minefield") trySpawn(true, () => spawnMine(worldY + rand(-50, 80), c));
+    else if (zone === "minefield") trySpawn(true, () => spawnMine(worldY + rand(-50, 80), c, { seeker: p > 0.34 && activePursuerCount() < pursuerCap && Math.random() < 0.34 }));
+    else if (zone === "hunt") trySpawn(activePursuerCount() < pursuerCap, () => spawnPredator(worldY + rand(-50, 60), c));
     else if (zone === "rush") trySpawn(true, () => spawnComet(worldY + rand(-60, 80), c));
     else if (zone === "unstable") trySpawn(true, () => spawnBubble(worldY + rand(-40, 80), c));
 
@@ -448,7 +457,8 @@
     trySpawn(Math.random() < hazardChance * 0.46, () => spawnElectric(worldY + rand(-40, 70), c));
     trySpawn(Math.random() < hazardChance * 0.5, () => spawnCrystals(worldY + rand(-50, 80), c));
     trySpawn(Math.random() < hazardChance * 0.22, () => spawnGate(worldY + rand(-30, 70), c));
-    trySpawn(Math.random() < hazardChance * 0.28, () => spawnMine(worldY + rand(-50, 80), c));
+    trySpawn(Math.random() < hazardChance * 0.28, () => spawnMine(worldY + rand(-50, 80), c, { seeker: p > 0.32 && activePursuerCount() < pursuerCap && Math.random() < 0.22 }));
+    trySpawn(p > 0.3 && activePursuerCount() < pursuerCap && Math.random() < hazardChance * 0.18, () => spawnPredator(worldY + rand(-50, 60), c));
     trySpawn(Math.random() < hazardChance * 0.22, () => spawnComet(worldY + rand(-60, 80), c));
     trySpawn(Math.random() < hazardChance * 0.28, () => spawnBubble(worldY + rand(-40, 80), c));
     const maxHazards = highQuality ? 64 : 34;
@@ -525,19 +535,54 @@
     });
   }
 
-  function spawnMine(worldY, c) {
-    const amount = Math.random() < 0.45 + game.pressure * 0.25 ? 2 : 1;
+  function spawnMine(worldY, c, options = {}) {
+    const amount = options.seeker ? 1 : Math.random() < 0.45 + game.pressure * 0.25 ? 2 : 1;
     for (let i = 0; i < amount; i += 1) {
+      const x = rand(c.left + 50, c.right - 50);
+      const y = worldY + i * rand(42, 72);
       hazards.push({
         type: "mine",
-        x: rand(c.left + 50, c.right - 50),
-        y: worldY + i * rand(42, 72),
+        x,
+        y,
+        originX: x,
+        originY: y,
         r: rand(15, 24) + game.pressure * 7,
         phase: rand(0, TAU),
         drift: rand(-22, 22),
+        vx: 0,
+        vy: 0,
+        seeker: Boolean(options.seeker),
+        chaseState: "idle",
+        chaseT: rand(1.6, 2.25),
+        trigger: rand(150, 205),
+        range: rand(150, 220),
         near: false,
       });
     }
+  }
+
+  function spawnPredator(worldY, c) {
+    const fromLeft = Math.random() < 0.5;
+    const x = fromLeft ? c.left - 42 : c.right + 42;
+    const y = worldY + rand(-24, 48);
+    const dir = fromLeft ? 1 : -1;
+    hazards.push({
+      type: "predator",
+      x,
+      y,
+      originX: x,
+      originY: y,
+      vx: dir * rand(82, 120),
+      vy: rand(-10, 10),
+      r: rand(15, 20),
+      side: dir,
+      hue: 24,
+      phase: rand(0, TAU),
+      chaseState: "chasing",
+      chaseT: rand(1.7, 2.45),
+      range: rand(190, 270),
+      near: false,
+    });
   }
 
   function spawnComet(worldY, c) {
@@ -753,15 +798,19 @@
           nearest = Math.min(nearest, Math.abs(dy));
         }
       }
-      if (h.type === "mine" || h.type === "comet") {
-        const hx = h.type === "comet" ? h.x + h.vx * clamp((sy - jelly.y) / 180, -0.5, 0.9) : h.x;
-        const d = dist(jelly.x, jelly.y, hx, sy);
+      if (h.type === "mine" || h.type === "comet" || h.type === "predator") {
+        const look = h.type === "comet" ? clamp((sy - jelly.y) / 180, -0.5, 0.9) : h.chaseState === "chasing" ? 0.42 : 0.18;
+        const hx = h.x + (h.vx || 0) * look;
+        const hy = sy + (h.vy || 0) * look;
+        const activeChase = h.type === "predator" || h.chaseState === "chasing";
+        const d = dist(jelly.x, jelly.y, hx, hy);
         nearest = Math.min(nearest, d - h.r);
-        if (d < 150) {
-          const push = clamp((150 - d) / 130, 0, 1);
-          targetX += ((jelly.x - hx) / Math.max(1, d)) * push * 170;
-          targetY += ((jelly.y - sy) / Math.max(1, d)) * push * 110;
-          danger = Math.max(danger, push * 0.9);
+        const alert = activeChase ? 190 : 150;
+        if (d < alert) {
+          const push = clamp((alert - d) / (activeChase ? 150 : 130), 0, 1);
+          targetX += ((jelly.x - hx) / Math.max(1, d)) * push * (activeChase ? 220 : 170);
+          targetY += ((jelly.y - hy) / Math.max(1, d)) * push * (activeChase ? 140 : 110);
+          danger = Math.max(danger, push * (activeChase ? 1 : 0.9));
         }
       }
       if (h.type === "bubble") {
@@ -951,8 +1000,10 @@
         h.x += Math.sin(game.time * 1.3 + h.phase) * dt * 14;
       }
       if (h.type === "mine") {
-        h.x += Math.sin(game.time * 1.9 + h.phase) * h.drift * dt;
+        if (h.seeker) updateSeekerMine(h, dt);
+        else h.x += Math.sin(game.time * 1.9 + h.phase) * h.drift * dt;
       }
+      if (h.type === "predator") updatePredator(h, dt);
       if (h.type === "comet") {
         h.x += h.vx * dt;
         h.y += h.vy * dt;
@@ -978,6 +1029,69 @@
       c.life -= dt;
       if (c.y - game.cameraY < -160 || c.life <= 0) currents.splice(i, 1);
     }
+  }
+
+  function updateSeekerMine(h, dt) {
+    const sy = h.y - game.cameraY;
+    const targetY = game.cameraY + jelly.y;
+    const d = dist(jelly.x, targetY, h.x, h.y);
+
+    if (h.chaseState === "idle") {
+      h.x += Math.sin(game.time * 1.9 + h.phase) * h.drift * dt;
+      if (sy > -30 && sy < H + 80 && d < h.trigger) {
+        h.chaseState = "chasing";
+        h.announced = true;
+        game.eventText = "雷泡锁定";
+        game.shock = Math.max(game.shock, 0.36);
+      }
+      return;
+    }
+
+    if (h.chaseState === "chasing") {
+      h.chaseT -= dt;
+      const moved = dist(h.x, h.y, h.originX, h.originY);
+      if (h.chaseT <= 0 || moved > h.range || sy < -70) {
+        h.chaseState = "spent";
+        h.vx = (h.x < jelly.x ? -1 : 1) * rand(76, 118);
+        h.vy *= 0.25;
+      } else {
+        const speed = 82 + game.pressure * 52;
+        const dx = jelly.x - h.x;
+        const dy = targetY - h.y;
+        const len = Math.max(1, Math.hypot(dx, dy));
+        h.vx = lerp(h.vx, (dx / len) * speed, 0.1);
+        h.vy = lerp(h.vy, (dy / len) * speed, 0.1);
+      }
+    }
+
+    h.x += h.vx * dt;
+    h.y += h.vy * dt;
+    h.vx *= Math.pow(0.992, dt * 60);
+    h.vy *= Math.pow(0.992, dt * 60);
+  }
+
+  function updatePredator(h, dt) {
+    if (h.chaseState === "chasing") {
+      h.chaseT -= dt;
+      const moved = dist(h.x, h.y, h.originX, h.originY);
+      if (h.chaseT <= 0 || moved > h.range || h.y - game.cameraY < -70) {
+        h.chaseState = "spent";
+        h.vx = h.side * rand(145, 190);
+        h.vy *= 0.25;
+      } else {
+        const targetX = jelly.x + jelly.vx * 0.16;
+        const targetY = game.cameraY + jelly.y + jelly.vy * 0.16;
+        const dx = targetX - h.x;
+        const dy = targetY - h.y;
+        const len = Math.max(1, Math.hypot(dx, dy));
+        const speed = 126 + game.pressure * 74;
+        h.vx = lerp(h.vx, (dx / len) * speed, 0.12);
+        h.vy = lerp(h.vy, (dy / len) * speed, 0.12);
+      }
+    }
+
+    h.x += h.vx * dt;
+    h.y += h.vy * dt;
   }
 
   function gateMetrics(h) {
@@ -1090,6 +1204,7 @@
   function reasonForDamage(source) {
     if (source === "blackhole") return "blackhole";
     if (source === "electric" || source === "mine") return "electric";
+    if (source === "predator") return "current";
     if (source === "comet") return "current";
     if (source === "energy") return "energy";
     if (source === "crystal" || source === "gate" || source === "wall") return "shatter";
@@ -1177,8 +1292,16 @@
       if (h.type === "mine") {
         const d = dist(jelly.x, jelly.y, h.x, sy);
         const activeR = h.r + Math.max(0, Math.sin(game.time * 4.6 + h.phase)) * 10;
-        if (d < activeR + jelly.r * 0.48) applyDamage("mine", h.x, sy, "雷泡放电");
-        else nearMiss(h, d, activeR + jelly.r + 14, "雷泡边上甩开了");
+        const hitNote = h.seeker ? "追猎雷泡放电" : "雷泡放电";
+        const missNote = h.seeker ? "追猎雷泡甩开了" : "雷泡边上甩开了";
+        if (d < activeR + jelly.r * 0.48) applyDamage("mine", h.x, sy, hitNote);
+        else nearMiss(h, d, activeR + jelly.r + 14, missNote);
+      }
+
+      if (h.type === "predator") {
+        const d = dist(jelly.x, jelly.y, h.x, sy);
+        if (d < h.r + jelly.r * 0.55) applyDamage("predator", h.x, sy, "猎光鱼追咬");
+        else nearMiss(h, d, h.r + jelly.r + 16, "猎光鱼擦身甩开");
       }
 
       if (h.type === "comet") {
@@ -1527,6 +1650,7 @@
       if (h.type === "electric") drawElectric(h, sy);
       if (h.type === "gate") drawGate(h, sy);
       if (h.type === "mine") drawMine(h, sy);
+      if (h.type === "predator") drawPredator(h, sy);
       if (h.type === "comet") drawComet(h, sy);
       if (h.type === "bubble") drawBubble(h, sy);
       drawHazardLabel(h, sy);
@@ -1541,9 +1665,11 @@
           ? "gate"
           : h.type === "mine"
             ? "mine"
-            : h.type === "comet"
-              ? "comet"
-              : h.type;
+            : h.type === "predator"
+              ? "predator"
+              : h.type === "comet"
+                ? "comet"
+                : h.type;
     const rule = damageRules[source];
     if (!rule) return;
     const x = h.x ?? h.gapX ?? W * 0.5;
@@ -1706,16 +1832,25 @@
   function drawMine(h, sy) {
     const pulse = Math.max(0, Math.sin(game.time * 4.6 + h.phase));
     const r = h.r + pulse * 8;
+    const chasing = h.seeker && h.chaseState === "chasing";
     ctx.save();
     ctx.translate(h.x, sy);
     ctx.globalCompositeOperation = "lighter";
     ctx.shadowBlur = fx(24);
-    ctx.shadowColor = "rgba(255, 64, 196, 0.85)";
-    ctx.strokeStyle = `rgba(255, 87, 207, ${0.18 + pulse * 0.42})`;
+    ctx.shadowColor = chasing ? "rgba(255, 180, 55, 0.9)" : "rgba(255, 64, 196, 0.85)";
+    ctx.strokeStyle = chasing ? `rgba(255, 185, 68, ${0.28 + pulse * 0.48})` : `rgba(255, 87, 207, ${0.18 + pulse * 0.42})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(0, 0, r + 10, 0, TAU);
     ctx.stroke();
+    if (h.seeker) {
+      ctx.setLineDash(chasing ? [5, 4] : [2, 5]);
+      ctx.strokeStyle = chasing ? "rgba(255, 216, 118, 0.72)" : "rgba(255, 216, 118, 0.24)";
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 20 + Math.sin(game.time * 7) * 3, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.fillStyle = "rgba(12, 3, 20, 0.88)";
     ctx.beginPath();
     ctx.arc(0, 0, h.r, 0, TAU);
@@ -1732,6 +1867,40 @@
     ctx.beginPath();
     ctx.arc(0, 0, h.r * 0.32, 0, TAU);
     ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPredator(h, sy) {
+    const chasing = h.chaseState === "chasing";
+    const angle = Math.atan2(h.vy, h.vx || h.side);
+    ctx.save();
+    ctx.translate(h.x, sy);
+    ctx.rotate(angle);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.shadowBlur = fx(chasing ? 24 : 14);
+    ctx.shadowColor = chasing ? "rgba(255, 135, 54, 0.88)" : "rgba(255, 195, 92, 0.42)";
+    ctx.fillStyle = chasing ? "rgba(255, 126, 58, 0.82)" : "rgba(255, 192, 92, 0.42)";
+    ctx.strokeStyle = "rgba(255, 238, 166, 0.62)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(h.r * 1.55, 0);
+    ctx.quadraticCurveTo(h.r * 0.15, -h.r * 0.95, -h.r * 1.2, -h.r * 0.42);
+    ctx.quadraticCurveTo(-h.r * 0.55, 0, -h.r * 1.2, h.r * 0.42);
+    ctx.quadraticCurveTo(h.r * 0.15, h.r * 0.95, h.r * 1.55, 0);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(20, 3, 9, 0.9)";
+    ctx.beginPath();
+    ctx.arc(h.r * 0.55, -h.r * 0.18, h.r * 0.14, 0, TAU);
+    ctx.fill();
+    if (chasing) {
+      ctx.rotate(-angle);
+      ctx.setLineDash([7, 6]);
+      ctx.strokeStyle = "rgba(255, 212, 102, 0.38)";
+      ctx.beginPath();
+      ctx.arc(0, 0, h.r * 2.1 + Math.sin(game.time * 8) * 3, 0, TAU);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
