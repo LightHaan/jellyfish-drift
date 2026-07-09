@@ -7,7 +7,7 @@
   const targetFrameMs = highQuality ? 1000 / 60 : 1000 / 24;
 
   function fx(value) {
-    return highQuality ? value : Math.min(7, value * 0.34);
+    return highQuality ? value : Math.min(3, value * 0.16);
   }
 
   const hud = {
@@ -27,6 +27,8 @@
     failReason: document.getElementById("failReason"),
     finalTime: document.getElementById("finalTime"),
     finalDepth: document.getElementById("finalDepth"),
+    finalScore: document.getElementById("finalScore"),
+    finalBest: document.getElementById("finalBest"),
     finalShield: document.getElementById("finalShield"),
     restartHint: document.getElementById("restartHint"),
     pilotCard: document.querySelector(".pilot-card"),
@@ -240,8 +242,8 @@
   }
 
   function makeStars() {
-    const density = highQuality ? 4600 : 7600;
-    stars = Array.from({ length: Math.round(clamp((W * H) / density, 42, highQuality ? 180 : 90)) }, () => ({
+    const density = highQuality ? 5200 : 12000;
+    stars = Array.from({ length: Math.round(clamp((W * H) / density, 24, highQuality ? 150 : 56)) }, () => ({
       x: Math.random() * W,
       y: Math.random() * H,
       p: rand(0.12, 0.8),
@@ -317,7 +319,7 @@
     floaters.length = 0;
     hud.resultPanel.classList.remove("show");
 
-    const prewarm = highQuality ? 10 : 7;
+    const prewarm = highQuality ? 8 : 5;
     for (let i = 0; i < prewarm; i += 1) {
       spawnCluster(game.nextSpawnY + i * 92);
     }
@@ -353,6 +355,7 @@
     const p = game.pressure;
     const bag = ["reward", "reward", "drift", "rush"];
     if (p > 0.05) bag.push("narrow", "blackhole", "gate");
+    if (p > 0.08) bag.push("hunt");
     if (p > 0.16) bag.push("electric", "minefield", "rush", "hunt");
     if (p > 0.24) bag.push("hunt", "hunt");
     if (p > 0.36) bag.push("blackhole", "electric", "narrow", "unstable", "gate", "minefield", "hunt");
@@ -441,7 +444,7 @@
       const gained = addScore(score + game.chaseEscapes * 3, label, h.x, sy - 18, hue);
       game.eventText = `${label} +${gained}`;
       game.shock = Math.max(game.shock, 0.3);
-      floatText(h.x, sy - 36, "失效", hue);
+      floatText(h.x, sy - 36, "追丢了", hue);
     }
   }
 
@@ -480,13 +483,13 @@
         taken: false,
       });
     }
-    while (collectibles.length > (highQuality ? 90 : 48)) collectibles.shift();
+    while (collectibles.length > (highQuality ? 72 : 36)) collectibles.shift();
 
     if (openingDrift) return;
 
-    const hazardChance = clamp(0.22 + p * 0.36, 0.22, 0.58);
+    const hazardChance = clamp(0.2 + p * 0.32, 0.2, 0.52);
     const hazardCap = p > 0.42 || zone === "hunt" ? 2 : 1;
-    const pursuerCap = highQuality ? 5 : 4;
+    const pursuerCap = highQuality ? 4 : 3;
     let spawned = 0;
     const trySpawn = (condition, spawn) => {
       if (spawned >= hazardCap || !condition) return;
@@ -512,7 +515,7 @@
     trySpawn(Math.random() < hazardChance * 0.22, () => spawnComet(worldY + rand(-60, 80), c));
     trySpawn(Math.random() < hazardChance * 0.28, () => spawnBubble(worldY + rand(-40, 80), c));
 
-    const pursuerChance = zone === "hunt" ? 0.92 : clamp(0.08 + p * 0.54, 0.08, 0.5);
+    const pursuerChance = zone === "hunt" ? 0.86 : clamp(0.22 + p * 0.42, 0.22, 0.54);
     if (p > 0.08 && activePursuerCount() < pursuerCap && Math.random() < pursuerChance) {
       spawnPredator(worldY + rand(-90, 95), c);
     }
@@ -520,7 +523,7 @@
       spawnMine(worldY + rand(-70, 90), c, { seeker: true });
     }
 
-    const maxHazards = highQuality ? 78 : 46;
+    const maxHazards = highQuality ? 64 : 34;
     if (hazards.length > maxHazards) hazards.splice(0, hazards.length - maxHazards);
     if (currents.length > (highQuality ? 28 : 14)) currents.splice(0, currents.length - (highQuality ? 28 : 14));
   }
@@ -631,15 +634,15 @@
       y,
       originX: x,
       originY: y,
-      vx: dir * rand(34, 58),
-      vy: rand(-14, 14),
+      vx: dir * rand(18, 34),
+      vy: rand(-8, 8),
       r: rand(15, 20),
       side: dir,
       hue: 24,
       phase: rand(0, TAU),
-      chaseState: "chasing",
-      chaseT: rand(3.4, 5.2),
-      range: rand(360, 540),
+      chaseState: "waiting",
+      chaseT: rand(2.8, 3.9),
+      range: rand(250, 360),
       lockRange: rand(260, 360),
       near: false,
     });
@@ -863,7 +866,7 @@
         const look = h.type === "comet" ? clamp((sy - jelly.y) / 180, -0.5, 0.9) : h.chaseState === "chasing" ? 0.42 : 0.18;
         const hx = h.x + (h.vx || 0) * look;
         const hy = sy + (h.vy || 0) * look;
-        const activeChase = h.type === "predator" || h.chaseState === "chasing";
+        const activeChase = h.chaseState === "chasing";
         const d = dist(jelly.x, jelly.y, hx, hy);
         nearest = Math.min(nearest, d - h.r);
         const alert = activeChase ? 190 : 150;
@@ -1044,7 +1047,7 @@
       hue: keys.boost ? 316 : 184 + Math.sin(game.time) * 34,
       r: jelly.r * rand(0.16, 0.32) * jelly.glow,
     });
-    while (trails.length > (highQuality ? 150 : 86)) trails.shift();
+    while (trails.length > (highQuality ? 120 : 34)) trails.shift();
   }
 
   function scrape(text) {
@@ -1102,6 +1105,8 @@
       h.x += Math.sin(game.time * 1.9 + h.phase) * h.drift * dt;
       if (sy > -30 && sy < H + 80 && d < h.trigger) {
         h.chaseState = "chasing";
+        h.originX = h.x;
+        h.originY = h.y;
         h.announced = true;
         game.eventText = "雷泡锁定";
         game.shock = Math.max(game.shock, 0.36);
@@ -1115,7 +1120,7 @@
       if (h.chaseT <= 0 || moved > h.range || sy < -85) {
         h.vx = (h.x < jelly.x ? -1 : 1) * rand(112, 160);
         h.vy *= 0.25;
-        expireChase(h, "雷泡失效", 18, 48);
+        expireChase(h, "雷泡追丢", 18, 48);
       } else {
         const speed = 118 + game.pressure * 82;
         const dx = jelly.x - h.x;
@@ -1134,28 +1139,37 @@
 
   function updatePredator(h, dt) {
     const sy = h.y - game.cameraY;
+    if (h.chaseState === "waiting") {
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      if (sy < H + 110 && sy > -80) {
+        h.chaseState = "chasing";
+        h.originX = h.x;
+        h.originY = h.y;
+        h.announced = true;
+        game.eventText = "猎光鱼锁定";
+        game.shock = Math.max(game.shock, 0.36);
+      }
+      return;
+    }
+
     if (h.chaseState === "chasing") {
       h.chaseT -= dt;
       const moved = dist(h.x, h.y, h.originX, h.originY);
       if (h.chaseT <= 0 || moved > h.range || sy < -95) {
         h.vx = h.side * rand(180, 245);
         h.vy *= 0.22;
-        expireChase(h, "猎光鱼失效", 28, 38);
+        expireChase(h, "猎光鱼下班", 28, 38);
       } else {
-        const lead = clamp(dist(jelly.x, game.cameraY + jelly.y, h.x, h.y) / 360, 0.08, 0.32);
+        const lead = clamp(dist(jelly.x, game.cameraY + jelly.y, h.x, h.y) / 420, 0.06, 0.22);
         const targetX = jelly.x + jelly.vx * lead;
         const targetY = game.cameraY + jelly.y + jelly.vy * lead;
         const dx = targetX - h.x;
         const dy = targetY - h.y;
         const len = Math.max(1, Math.hypot(dx, dy));
-        const speed = 170 + game.pressure * 112;
-        h.vx = lerp(h.vx, (dx / len) * speed, 0.2);
-        h.vy = lerp(h.vy, (dy / len) * speed, 0.2);
-        if (!h.announced && sy > -40 && sy < H + 120) {
-          h.announced = true;
-          game.eventText = "猎光鱼锁定";
-          game.shock = Math.max(game.shock, 0.45);
-        }
+        const speed = 138 + game.pressure * 88;
+        h.vx = lerp(h.vx, (dx / len) * speed, 0.3);
+        h.vy = lerp(h.vy, (dy / len) * speed, 0.3);
       }
     }
 
@@ -1331,9 +1345,9 @@
     for (let i = floaters.length - 1; i >= 0; i -= 1) {
       if (floaters[i].age > floaters[i].life) floaters.splice(i, 1);
     }
-    const maxParticles = highQuality ? 560 : 210;
-    const maxRings = highQuality ? 54 : 22;
-    const maxFloaters = highQuality ? 22 : 10;
+    const maxParticles = highQuality ? 360 : 0;
+    const maxRings = highQuality ? 30 : 0;
+    const maxFloaters = highQuality ? 18 : 8;
     if (particles.length > maxParticles) particles.splice(0, particles.length - maxParticles);
     if (rings.length > maxRings) rings.splice(0, rings.length - maxRings);
     if (floaters.length > maxFloaters) floaters.splice(0, floaters.length - maxFloaters);
@@ -1457,7 +1471,9 @@
     hud.failReason.textContent = failReasons[reason] || "被水流卷走";
     hud.finalTime.textContent = formatTime(game.time);
     hud.finalDepth.textContent = `${game.depth}m`;
-    hud.finalShield.textContent = `${Math.round(game.shield)}甲 / ${game.score}分`;
+    hud.finalScore.textContent = `${game.score}`;
+    hud.finalBest.textContent = `${game.bestScore}`;
+    hud.finalShield.textContent = `${Math.round(game.shield)}`;
     burst(jelly.x, jelly.y, highQuality ? (reason === "shatter" ? 90 : 56) : 24, reason === "electric" ? 304 : 186, 1.35);
   }
 
@@ -1506,7 +1522,8 @@
   }
 
   function burst(x, y, count, hue, power = 1) {
-    const maxParticles = highQuality ? 460 : 180;
+    if (!highQuality) return;
+    const maxParticles = 320;
     if (particles.length > maxParticles) particles.splice(0, particles.length - maxParticles);
     for (let i = 0; i < count; i += 1) {
       const a = rand(0, TAU);
@@ -1525,7 +1542,8 @@
   }
 
   function ring(x, y, hue, power = 1) {
-    if (rings.length > (highQuality ? 42 : 18)) rings.shift();
+    if (!highQuality) return;
+    if (rings.length > 28) rings.shift();
     rings.push({
       x,
       y,
@@ -1559,8 +1577,10 @@
     drawCollectibles();
     drawHazards();
     drawTrails();
-    drawParticles();
-    drawRings();
+    if (highQuality) {
+      drawParticles();
+      drawRings();
+    }
     drawJelly();
     drawFloaters();
     drawWarnings();
@@ -1585,7 +1605,7 @@
       ctx.beginPath();
       ctx.arc(star.x, y - 15, star.r, 0, TAU);
       ctx.fill();
-      if (game.pressure > 0.08 || game.zone === "rush") {
+      if (highQuality && (game.pressure > 0.08 || game.zone === "rush")) {
         ctx.strokeStyle = `hsla(${star.h}, 94%, 72%, ${0.06 + game.pressure * 0.06})`;
         ctx.lineWidth = Math.max(1, star.r * 0.8);
         ctx.beginPath();
@@ -1595,8 +1615,9 @@
       }
     }
 
-    for (let i = 0; i < 9; i += 1) {
-      const x = ((i + 0.5) / 9) * W;
+    const lanes = highQuality ? 9 : 4;
+    for (let i = 0; i < lanes; i += 1) {
+      const x = ((i + 0.5) / lanes) * W;
       const sway = Math.sin(game.time * 0.25 + i * 1.9 + game.seed) * 24;
       ctx.strokeStyle = `hsla(${175 + i * 13}, 90%, 60%, ${0.035 + game.pressure * 0.015})`;
       ctx.lineWidth = 1;
@@ -1614,7 +1635,8 @@
   function drawCave() {
     const leftPts = [];
     const rightPts = [];
-    for (let y = -80; y <= H + 80; y += 18) {
+    const step = highQuality ? 18 : 28;
+    for (let y = -80; y <= H + 80; y += step) {
       const c = caveAt(game.cameraY + y);
       leftPts.push({ x: c.left, y });
       rightPts.push({ x: c.right, y });
@@ -1756,6 +1778,7 @@
   }
 
   function drawHazardLabel(h, sy) {
+    if (!highQuality && Math.abs(sy - jelly.y) > 220 && h.chaseState !== "chasing") return;
     const source =
       h.type === "crystal"
         ? "crystal"
@@ -1772,7 +1795,7 @@
     if (!rule) return;
     const x = h.x ?? h.gapX ?? W * 0.5;
     const tail = rule.consequence && rule.consequence !== "无负面" ? ` ${rule.consequence.replace(/[0-9.]+s/g, "")}` : "";
-    const chaseTag = h.chaseState === "chasing" ? " 锁定" : h.chaseState === "spent" ? " 失效" : h.seeker ? " 预警" : "";
+    const chaseTag = h.chaseState === "chasing" ? " 锁定" : h.chaseState === "spent" ? " 追丢" : h.seeker ? " 预警" : "";
     const text = rule.amount > 0 ? `-${rule.amount} ${rule.label}${tail}${chaseTag}` : `${rule.label}${chaseTag}`;
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
@@ -2036,9 +2059,9 @@
     ctx.globalCompositeOperation = "lighter";
     for (const t of trails) {
       const life = 1 - t.age / t.life;
-      ctx.fillStyle = `hsla(${t.hue}, 96%, 66%, ${life * 0.25})`;
-      ctx.shadowBlur = fx(16 * life);
-      ctx.shadowColor = `hsl(${t.hue} 96% 66%)`;
+      ctx.fillStyle = `hsla(${t.hue}, 96%, 66%, ${life * (highQuality ? 0.25 : 0.14)})`;
+      ctx.shadowBlur = highQuality ? fx(16 * life) : 0;
+      if (highQuality) ctx.shadowColor = `hsl(${t.hue} 96% 66%)`;
       ctx.beginPath();
       ctx.ellipse(t.x, t.y, t.r * (0.9 + life), t.r * (1.4 + life * 2.2), 0, 0, TAU);
       ctx.fill();
@@ -2174,7 +2197,7 @@
     hud.depth.textContent = `${game.depth}m`;
     hud.healthText.textContent = `${Math.round(game.health)} · ${game.score}分`;
     if (hud.scoreText) hud.scoreText.textContent = `${game.score}分`;
-    hud.shieldText.textContent = `${Math.round(game.shield)} / ${game.bestScore}最高`;
+    hud.shieldText.textContent = String(Math.round(game.shield));
     hud.hitReadout.textContent = game.lastHitText;
     hud.debuffReadout.textContent = debuffSummary();
     const zone = zones.find((item) => item.key === game.zone);
